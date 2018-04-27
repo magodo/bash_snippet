@@ -22,7 +22,7 @@ trap "popd > /dev/null" EXIT
 
 usage() {
     cat << EOF | warn
-usage: ./$MYNAME main_branch bug_branch last_version new_version
+usage: ./$MYNAME <main_branch> <bug_branch> <last_version> <new_version>
 
 example: ./$MYNAME dev_master bug_fix v247 v248
 EOF
@@ -46,13 +46,26 @@ EOF
     return 0
 }
 
+while :; do
+    case $1 in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            break
+    esac
+    shift
+done
+
 main_branch=$1
 bug_branch=$2
 last_version=$3
 new_version=$4
 
 # 检查参数
-if [[ -z $new_version ]]; then
+if [[ $# != 4 ]]; then
+    error "error: parameter amount mismatch!"
     usage
     exit 1
 fi
