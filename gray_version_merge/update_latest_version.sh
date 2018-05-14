@@ -93,10 +93,31 @@ if [[ $(git describe --tags --exact-match "$ancestor") != "$last_version" ]]; th
 EOF
 fi
 
+# 获得当前已经stage的文件列表，在后续的所有新老版本的比较中过滤掉这些文件（用于支持此脚本多次调用）
+filter_files=()
+while read -r file; do
+    filter_files+=("$file")
+done < <(git diff --cached --name-only)
+
+# 检查是否老版本对应的新版本文件已经被stage了，如果是则返回0，否则返回1
+is_staged() {
+    local old_file new_file
+    old_file="$1"
+    new_file="${old_file/$last_version/$new_version}" 
+    for f in "${filter_files[@]}"; do
+        [[ "$f" = "$new_file" ]] && return 0
+    done
+    return 1
+}
+
 # 检查老版本有没有删除文件，如果有，则需要额外处理。
 # 原因是，不知道这些文件在新版本中是否也需要删除或重命名
 is_first=1
 while read -r file; do
+
+    # 过滤已经被stage的文件
+    is_staged "$file" && continue
+
     if [[ $is_first = 1 ]]; then
         is_first=0
         cat << EOF | warn
@@ -111,6 +132,10 @@ done < <(git diff --diff-filter D --name-only "$ancestor" -- | grep "$last_versi
 # 原因是，不知道这些文件在新版本中是否也需要删除或重命名
 is_first=1
 while read -r _ _ _ _ _ old_file new_file; do
+
+    # 过滤已经被stage的文件
+    is_staged "$old_file" && continue
+
     if [[ $is_first = 1 ]]; then
         is_first=0
         cat << EOF | warn
@@ -132,6 +157,10 @@ done < <(git diff --diff-filter R -M100% --raw "$ancestor" -- | grep "$last_vers
 ok_files=()
 fail_files=()
 while read -r old_file; do
+
+    # 过滤已经被stage的文件
+    is_staged "$old_file" && continue
+
     new_file="${old_file/$last_version/$new_version}" 
 
     # 如果新版本中该文件不存在，那么有两种情况：
@@ -156,6 +185,10 @@ while read -r old_file; do
         # git merge-file 不支持 process substitution, 详见：https://stackoverflow.com/questions/30832327/git-merge-file-fails-with-bash-process-substitution-operator-that-uses-git-show
         ancestor_file="/tmp/.gray_merge_ancestor"
         echo "$ancestor_file_content" > $ancestor_file
+
+        # 恢复新版本的文件，用于支持此脚本多次调用
+        git checkout -- "$new_file"
+
         if git merge-file "$new_file" $ancestor_file "${old_file}"; then
             ok_files+=("$new_file")
         else
@@ -164,10 +197,12 @@ while read -r old_file; do
     fi
 done < <(git diff --diff-filter ACM --name-only "$ancestor" -- | grep "$last_version")
 
+# 添加fast-forward的文件到stage
 for file in "${ok_files[@]}"; do
     git add "$file"
 done
 
+# 打印需要手动解决conflict的文件
 if [[ "${#fail_files[@]}" -gt 0 ]]; then
     cat << EOF | warn
 
