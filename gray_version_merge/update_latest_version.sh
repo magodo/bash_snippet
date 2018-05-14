@@ -153,7 +153,10 @@ while read -r old_file; do
             ancestor_file_content=""
         fi
 
-        if git merge-file "$new_file" <(echo "$ancestor_file_content") "${old_file}"; then
+        # git merge-file 不支持 process substitution, 详见：https://stackoverflow.com/questions/30832327/git-merge-file-fails-with-bash-process-substitution-operator-that-uses-git-show
+        ancestor_file="/tmp/.gray_merge_ancestor"
+        echo "$ancestor_file_content" > $ancestor_file
+        if git merge-file "$new_file" $ancestor_file "${old_file}"; then
             ok_files+=("$new_file")
         else
             fail_files+=("$new_file") 
